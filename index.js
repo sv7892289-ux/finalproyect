@@ -127,11 +127,19 @@ btnCrearPartida.addEventListener("click", async () => {
     creadaEn: serverTimestamp()
   };
 
-  const docRef = await addDoc(collection(db, "partidas"), partida);
-  partidaId = docRef.id;
-  miSimbolo = "X";
-  cargarPartida(partidaId);
-  setMsg("Partida creada. Comparte el ID para que se unan.", "ok");
+  try {
+    const docRef = await addDoc(collection(db, "partidas"), partida);
+    partidaId = docRef.id;
+    miSimbolo = "X";
+    cargarPartida(partidaId);
+    // ✅ Mostrar el ID claramente
+    setMsg(`✅ Partida creada. ID: ${partidaId}`, "ok");
+    // Opcional: copiar al portapapeles
+    navigator.clipboard?.writeText(partidaId).catch(() => {});
+  } catch (e) {
+    console.error("Error al crear partida:", e);
+    setMsg("Error al crear partida: " + e.message, "err");
+  }
 });
 
 // === Unirse a partida (entra como O) ===
@@ -170,10 +178,8 @@ btnVerPartida.addEventListener("click", () => {
 function cargarPartida(id) {
   if (stopListener) { stopListener(); stopListener = null; }
 
-  // Limpieza visual
   tableroDiv.innerHTML = "";
   pganador.textContent = "—";
-
   panelPartida.style.display = "block";
   partidaRef = doc(db, "partidas", id);
 
@@ -185,8 +191,6 @@ function cargarPartida(id) {
         return;
       }
       const partida = snap.data();
-
-      // Detalles
       pid.textContent = id;
       pestado.textContent = partida.estado || "—";
       pturno.textContent = partida.turno || "—";
@@ -194,17 +198,14 @@ function cargarPartida(id) {
       po.textContent = partida.jugadores?.O || "—";
       pganador.textContent = partida.ganador || "—";
 
-      // Determinar mi símbolo dinámicamente
       if (currentUser) {
         if (partida.jugadores?.X === currentUser.email) miSimbolo = "X";
         else if (partida.jugadores?.O === currentUser.email) miSimbolo = "O";
         else miSimbolo = null;
       }
 
-      // Tablero
       renderTablero(partida.tablero || [], partida);
 
-      // Botones de revancha
       btnReiniciar.style.display =
         partida.estado === "ended" && (!partida.revancha || !partida.revancha.activa)
           ? "inline-block"
@@ -223,15 +224,15 @@ function cargarPartida(id) {
           ? "inline-block"
           : "none";
 
-      // ✅ Arreglo: forzar a ambos jugadores a pasar a la nueva partida
-      if (partida.revancha?.nuevaId) {
-        if (partida.revancha.nuevaId !== partidaId) {
-          partidaId = partida.revancha.nuevaId;
-          cargarPartida(partidaId);
-        }
+      if (partida.revancha?.nuevaId && partida.revancha.nuevaId !== partidaId) {
+        partidaId = partida.revancha.nuevaId;
+        cargarPartida(partidaId);
       }
     },
-    (err) => setMsg("Error al escuchar partida: " + err.message, "err")
+    (err) => {
+      console.error("Error en onSnapshot:", err);
+      setMsg("Error al escuchar partida: " + err.message, "err");
+    }
   );
 }
 
@@ -252,7 +253,6 @@ function renderTablero(tablero, partida) {
 
       const nuevoTablero = [...tablero];
       nuevoTablero[i] = miSimbolo;
-
       const ganador = verificarGanador(nuevoTablero);
       await updateDoc(partidaRef, {
         tablero: nuevoTablero,
@@ -261,7 +261,6 @@ function renderTablero(tablero, partida) {
         ganador: ganador
       });
     });
-
     tableroDiv.appendChild(celda);
   });
 }
@@ -335,12 +334,10 @@ btnAceptarReinicio.addEventListener("click", async () => {
     };
 
     const nuevaRef = await addDoc(collection(db, "partidas"), nuevaPartida);
-
     await updateDoc(partidaRef, {
       "revancha.nuevaId": nuevaRef.id,
       "revancha.activa": false
     });
-
     cargarPartida(nuevaRef.id);
     setMsg("¡Nueva partida creada! Se alternaron los roles.", "ok");
   } else {
